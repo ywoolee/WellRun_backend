@@ -23,6 +23,8 @@ public class Course {
     private Double actualDistance; // Tmap이 깎아준 진짜 거리
     private Double totalElevation; // 누적 고도
 
+    private Boolean isFlat; // ✨ 평지 코스인지 오르막 코스인지 저장!
+
     // Tmap이 깎아준 수많은 곡선 좌표들을 JSON 문자열로 통째로 저장합니다!
     @Column(columnDefinition = "LONGTEXT")
     private String pathCoordinates;

@@ -36,6 +36,15 @@ public class CourseController {
         try {
             double directDistance = LocationUtils.calculateDistance(startLat, startLng, endLat, endLng);
 
+            // 🚨 [신규 방어 로직] 목표 거리가 직선거리보다 짧은지 검증!
+            if (targetDistance > 0.0 && targetDistance < directDistance) {
+                double roundedDirectDist = Math.round(directDistance * 100) / 100.0;
+
+                response.put("status", "ERROR");
+                response.put("message", "목표 거리(" + targetDistance + "km)가 최소 직선거리(" + roundedDirectDist + "km)보다 짧습니다.");
+                return response; // 더 이상 진행하지 않고 즉시 컨트롤러 종료
+            }
+
             // 1. 도화지(그리드)와 고도 데이터는 딱 한 번만 세팅합니다!
             List<RouteNode> grid = courseRoutingService.generateGrid(startLat, startLng, endLat, endLng, targetDistance);
             elevationService.injectElevations(grid);
@@ -72,7 +81,8 @@ public class CourseController {
                 }
 
                 // 4. Tmap API 호출 및 스무딩
-                savedCourse = tmapService.smoothPathAndSave(optimalPath, targetDistance, pathElevationGain);
+                // ✨ 수정 1: 파라미터 맨 끝에 isFlat 추가
+                savedCourse = tmapService.smoothPathAndSave(optimalPath, targetDistance, pathElevationGain, isFlat);
 
                 if (savedCourse != null) {
                     double actualTmapDist = savedCourse.getActualDistance();
@@ -87,13 +97,19 @@ public class CourseController {
                         break; // for문 탈출
                     }
 
-                    // 6. 불합격 시 보정: 거리가 초과/미달된 비율만큼 다음 A* 목표 거리를 조정
+                    // 6. 불합격 시 보정: Tmap이 초과/미달한 '실제 거리 차이(오차)'만큼을 직접 가감하여 조정
                     if (attempt < maxTmapAttempts) {
-                        currentAStarTarget = currentAStarTarget * (targetDistance / actualTmapDist);
-                        log.info("🛠️ 오차 보정을 위해 다음 A* 목표 거리를 {}km로 조정하여 재도전합니다.", Math.round(currentAStarTarget * 100) / 100.0);
+                        // Tmap 실제 거리에서 목표 거리를 뺀 오차 (예: 목표 4.0인데 Tmap이 4.5면 diff는 0.5)
+                        double diff = actualTmapDist - targetDistance;
 
-                        // DB에 잘못 저장된 이전 코스는 삭제 (찌꺼기 데이터 방지)
-                        // courseRepository.delete(savedCourse); // 필요하다면 이 줄의 주석을 풀고 사용하세요.
+                        // 기존 A* 목표 거리에서 오차만큼을 그대로 뺌 (거리가 마이너스가 되지 않도록 최소 0.5km 방어선 설정)
+                        currentAStarTarget = Math.max(currentAStarTarget - diff, 0.5);
+
+                        log.info("🛠️ Tmap 오차({}km) 보정을 위해 다음 A* 목표 거리를 {}km로 조정하여 재도전합니다.",
+                                Math.round(diff * 100) / 100.0, Math.round(currentAStarTarget * 100) / 100.0);
+
+                        // 실패작은 재도전하기 전에 깔끔하게 삭제!
+                        tmapService.deleteCourse(savedCourse);
                     }
                 } else {
                     break; // Tmap 에러 발생 시 탈출

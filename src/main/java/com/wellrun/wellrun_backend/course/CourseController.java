@@ -68,16 +68,27 @@ public class CourseController {
                     optimalPath = courseRoutingService.generateLoopCourse(grid, startNode, currentAStarTarget, isFlat);
                 }
 
-                // 3. 고도 계산
+                // 3. 고도 계산 (1.0m 임계값 노이즈 필터링 적용)
                 double pathElevationGain = 0.0;
                 if (!optimalPath.isEmpty()) {
+                    // 기준점을 첫 번째 노드의 고도로 잡습니다.
+                    double referenceElev = optimalPath.get(0).getElevation();
+
                     for (int i = 1; i < optimalPath.size(); i++) {
                         double currElev = optimalPath.get(i).getElevation();
-                        double prevElev = optimalPath.get(i - 1).getElevation();
-                        if (currElev > prevElev) {
-                            pathElevationGain += (currElev - prevElev);
+                        double diff = currElev - referenceElev;
+
+                        // ✨ 고도가 최소 1.0m 이상 올라갔을 때만 오르막으로 인정! (1m 미만의 미세 노이즈 무시)
+                        if (diff >= 1.0) {
+                            pathElevationGain += diff;
+                            referenceElev = currElev; // 기준점을 현재 높이로 갱신
+                        } else if (diff <= -1.0) {
+                            // 1.0m 이상 내려갔을 때도 기준점 갱신 (다음 오르막 측정을 위해)
+                            referenceElev = currElev;
                         }
                     }
+                    // 소수점 첫째 자리까지 반올림
+                    pathElevationGain = Math.round(pathElevationGain * 10) / 10.0;
                 }
 
                 // 4. Tmap API 호출 및 스무딩

@@ -29,7 +29,6 @@ public class UserController {
 
         if (userOptional.isPresent()) {
             User user = userOptional.get();
-            // 임시로 평문 비밀번호 비교 (실무에서는 추후 BCrypt 등으로 암호화해야 함)
             if (user.getPassword().equals(loginUser.getPassword())) {
                 return ResponseEntity.ok("로그인 성공! 환영합니다, " + user.getNickname() + "님");
             } else {
@@ -38,5 +37,35 @@ public class UserController {
         } else {
             return ResponseEntity.status(404).body("가입되지 않은 아이디입니다.");
         }
+    }
+
+    // ✨ 마이페이지용 유저 프로필 정보 조회 API
+    @GetMapping("/{email}")
+    public ResponseEntity<User> getUserProfile(@PathVariable String email) {
+        return userRepository.findByEmail(email)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // ✨ [신규 추가] 회원정보 수정 API
+    @PutMapping("/{email}")
+    public ResponseEntity<User> updateUserProfile(@PathVariable String email, @RequestBody User updatedUser) {
+        Optional<User> userOptional = userRepository.findByEmail(email);
+        if (userOptional.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        User user = userOptional.get();
+        if (updatedUser.getNickname() != null && !updatedUser.getNickname().isBlank()) {
+            user.setNickname(updatedUser.getNickname());
+        }
+        user.setHeight(updatedUser.getHeight());
+        user.setWeight(updatedUser.getWeight());
+        user.setAge(updatedUser.getAge());
+        user.setGender(updatedUser.getGender());
+        user.setGoal(updatedUser.getGoal());
+
+        User saved = userRepository.save(user);
+        return ResponseEntity.ok(saved);
     }
 }
